@@ -1,0 +1,57 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install pyinstaller yt-dlp
+
+      - name: ffmpeg.exe 다운로드
+        run: |
+          $url = "https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-essentials_build.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_tmp
+          Copy-Item ffmpeg_tmp\ffmpeg-8.1.1-essentials_build\bin\ffmpeg.exe .
+        shell: pwsh
+
+      - name: yt-dlp.exe 다운로드
+        run: |
+          $url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          Invoke-WebRequest -Uri $url -OutFile yt-dlp.exe
+        shell: pwsh
+
+      - name: PyInstaller 빌드
+        run: |
+          pyinstaller --onefile --console `
+            --name "YT_Downloader" `
+            --add-binary "yt-dlp.exe;." `
+            --add-binary "ffmpeg.exe;." `
+            --hidden-import http.server `
+            --hidden-import urllib.parse `
+            --hidden-import urllib.request `
+            --hidden-import shutil `
+            --hidden-import locale `
+            ytdownloader.py
+        shell: pwsh
+
+      - name: EXE 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: YT_Downloader_Windows
+          path: dist/YT_Downloader.exe
+          retention-days: 30
