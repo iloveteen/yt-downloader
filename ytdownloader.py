@@ -839,9 +839,51 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_json({"error": "not found"}, 404)
 
+# ── 중복 실행 방지 ────────────────────────────────────────────────────────
+LOCK_FILE = EXE_DIR / "ytdl.lock"
+FIXED_PORT = 17860
+
+def is_already_running() -> bool:
+    """락파일로 이미 실행 중인지 확인"""
+    if LOCK_FILE.exists():
+        try:
+            pid = int(LOCK_FILE.read_text().strip())
+            # 해당 PID 프로세스가 실제로 살아있는지 확인
+            if IS_WIN:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                    capture_output=True, text=True, startupinfo=make_si()
+                )
+                if str(pid) in result.stdout:
+                    return True
+            else:
+                os.kill(pid, 0)  # 시그널 0 = 존재 확인만
+                return True
+        except (ValueError, OSError, ProcessLookupError):
+            pass
+        # 죽은 프로세스의 락파일 → 삭제
+        try: LOCK_FILE.unlink()
+        except: pass
+    return False
+
+def write_lock():
+    try: LOCK_FILE.write_text(str(os.getpid()))
+    except: pass
+
+def remove_lock():
+    try: LOCK_FILE.unlink()
+    except: pass
+
 # ── 메인 ─────────────────────────────────────────────────────────────────
 def main():
-    PORT = 17860
+    # 이미 실행 중이면 브라우저만 열고 종료
+    if is_already_running():
+        url = f"http://127.0.0.1:{FIXED_PORT}"
+        print(f"[YT Downloader] 이미 실행 중 → 브라우저 열기: {url}")
+        webbrowser.open(url)
+        return
+
+    PORT = FIXED_PORT
     server = None
     for port in range(PORT, PORT + 10):
         try:
@@ -850,19 +892,36 @@ def main():
         except OSError:
             continue
 
+    if server is None:
+        print("[YT Downloader] 포트를 열 수 없습니다.")
+        return
+
+    write_lock()
+
     url = f"http://127.0.0.1:{PORT}"
     print(f"[YT Downloader] 접속: {url}")
     print(f"[YT Downloader] 저장: {DOWNLOAD_DIR}")
+    print("[YT Downloader] 종료하려면 이 창을 닫으세요.")
 
-    def open_browser():
+    # 브라우저: 이미 열려있으면 새 탭 안 열리도록 체크
+    def open_browser_once():
         time.sleep(1.2)
+        # 서버가 응답하는지 먼저 확인
+        try:
+            import urllib.request as ur
+            ur.urlopen(f"http://127.0.0.1:{PORT}/ready", timeout=2)
+        except:
+            pass
         webbrowser.open(url)
-    threading.Thread(target=open_browser, daemon=True).start()
+
+    threading.Thread(target=open_browser_once, daemon=True).start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n[YT Downloader] 종료")
+    finally:
+        remove_lock()
         server.shutdown()
 
 if __name__ == "__main__":
