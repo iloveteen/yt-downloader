@@ -29,10 +29,23 @@ IS_WIN = sys.platform == "win32"
 # ── yt-dlp 자동 설치 ──────────────────────────────────────────────────────
 def setup_ytdlp() -> str:
     fname = "yt-dlp.exe" if IS_WIN else "yt-dlp"
+    # 1) PyInstaller 번들 내부 (sys._MEIPASS) - 최우선
+    if getattr(sys, "frozen", False):
+        bundled = BASE_DIR / fname
+        if bundled.exists():
+            print(f"[yt-dlp] 번들 발견: {bundled}")
+            return str(bundled)
+    # 2) exe 옆 폴더
     local = EXE_DIR / fname
-    if local.exists(): return str(local)
+    if local.exists():
+        print(f"[yt-dlp] 로컬 발견: {local}")
+        return str(local)
+    # 3) 시스템 PATH
     found = shutil.which("yt-dlp")
-    if found: return found
+    if found:
+        print(f"[yt-dlp] PATH 발견: {found}")
+        return found
+    # 4) pip install
     print("[yt-dlp] pip install 시도...")
     try:
         subprocess.run([sys.executable,"-m","pip","install","yt-dlp","-q"],
@@ -41,6 +54,7 @@ def setup_ytdlp() -> str:
         if found: return found
         return f"{sys.executable} -m yt_dlp"
     except: pass
+    # 5) GitHub 직접 다운로드
     print("[yt-dlp] GitHub 바이너리 다운로드...")
     try:
         import urllib.request
@@ -55,8 +69,16 @@ def setup_ytdlp() -> str:
 
 def setup_ffmpeg() -> str:
     fname = "ffmpeg.exe" if IS_WIN else "ffmpeg"
+    # 1) PyInstaller 번들 내부
+    if getattr(sys, "frozen", False):
+        bundled = BASE_DIR / fname
+        if bundled.exists():
+            print(f"[ffmpeg] 번들 발견: {bundled}")
+            return str(bundled)
+    # 2) exe 옆 폴더
     local = EXE_DIR / fname
     if local.exists(): return str(local)
+    # 3) 시스템 PATH
     return shutil.which("ffmpeg") or ""
 
 print("[YT Downloader] 초기화 중...")
